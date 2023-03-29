@@ -8,22 +8,28 @@ from web3 import Web3, logs
 import web as d5_web
 import GdxExecutor as d5execu
 import tool as tool_data
+import requests
+from datetime import datetime
 GDX_MIN_UNIT=900
 
-SLEEP_SEC=23
+SLEEP_SEC=10
 MAKE_ORDER_INTERVAL=1*60
 
 UNIT_K=30
 COUNT_K=4
+
+global ethUsdPrice
+global gdxUsdPrice
+
 class T2MakeOTHER(threading.Thread):
 
     def __init__(self,total_eth,
                  private_key,http_endpoint,
                  hold_top_ob_count=2,#除current外，盯住几档
                  eth_split_count=1,
-                 eth_min_amount=0.001,
+                 eth_min_amount=0.01,
                  gdx_min_unit=10,
-                 bodong=0.008,
+                 bodong=0.01,
                  whats_like_nofloat=0.003):
 
         threading.Thread.__init__(self)
@@ -34,8 +40,8 @@ class T2MakeOTHER(threading.Thread):
         self.gdx_min_unit=gdx_min_unit
         self.order_book=None
         self.price_key_dict={}
-        self.last_unit_float=None
-        self.last_smallunit_float=None
+        self.last_unit_float=None #最後一個單位浮動
+        self.last_smallunit_float=None #最後一個小單位浮動
         self.whats_like_nofloat=whats_like_nofloat
 
         self.total_eth=total_eth
@@ -47,29 +53,25 @@ class T2MakeOTHER(threading.Thread):
 
         threading.Thread(target=self.update_ob_tsk).start()#no g
         threading.Thread(target=self.update_traded_float_tsk).start()#no g
-        #
+     
         time.sleep(10)
 
-        wethBalance = self.g.WETH_balance()
-        ethBalance = self.g.ETH_balance()
-        gdxBalance = self.g.GDX_balance()
-        print(  f'WETH:{wethBalance/10**18}\n'
-                f'ETH:{ethBalance/10**18}\n'
-                f'GDX:{gdxBalance/10**18}\n')
         threading.Thread(target=self.do_opera_tsk).start()
 
     def do_opera_tsk(self):
 
         while True:
+            print('檢查上架')
             self.do_maker_make()
             self.do_swap()
             self.do_maker_cancel1()
             time.sleep(SLEEP_SEC)
 
+
     def do_maker_make(self):
 
         try:
-            # print('do_maker_make,=== past float:%s,small_float:%s,setting_nofloat:%s'%(self.last_unit_float,self.last_smallunit_float,self.whats_like_nofloat))
+            print(f'下單規則\n最近差異：{self.last_unit_float}\n最小浮動：{self.last_smallunit_float}\n設定偵測浮動:{self.whats_like_nofloat}')
             if None not in [self.last_unit_float,self.last_smallunit_float] and self.last_unit_float>self.whats_like_nofloat\
                     and self.last_smallunit_float<self.whats_like_nofloat/2.5:
                 return
@@ -85,21 +87,18 @@ class T2MakeOTHER(threading.Thread):
             # print(eth_balance)
 
             if eth_balance>self.eth_min_amount*0.8:
-                make_eth=min(float(eth_balance)*0.95,ceach_eth) #*0.95
-                # print(make_eth)
+                make_eth=min(float(eth_balance),ceach_eth) #*0.95
+                
                 split_scope=self.__get_split_buy_scops()
-                # print(split_scope)
-                print('eth_min_amount:%s,eth_balance:%s' % (self.eth_min_amount, eth_balance))
+            
                 if len(split_scope)>0 and time.time()-self.last_maker_time>MAKE_ORDER_INTERVAL:
                     for sigle_scope in split_scope:
                         ifaready=self.__if_already_in_scope(order_list, sigle_scope)
-                        print('ifaready:%s' % (ifaready))
-                        # print(ifaready)
-                        # print(sigle_scope[0])
-                        # print(Web3.to_wei(make_eth, 'ether')/10**18)
+                        # print('ifaready:%s' % (ifaready))
+                
                         if ifaready==False:
                             try:
-                                print('Make boundaryid:%s'%(sigle_scope[0]))
+                                # print('Make boundaryid:%s'%(sigle_scope[0]))
                                 order_id = self.g.do_maker(int(sigle_scope[0]), Web3.to_wei(make_eth, 'ether'), False)
                                 print('Make Order,id:%s'%(order_id))
 
@@ -157,12 +156,12 @@ class T2MakeOTHER(threading.Thread):
 
             last_unit_float=self.__get_float(COUNT_K,UNIT_K)
             if last_unit_float!=None:
-                print('last_unit_float:%s'%(last_unit_float))
+                # print('last_unit_float:%s'%(last_unit_float))
                 self.last_unit_float=last_unit_float
 
             last_smallunit_float=self.__get_float(3,5)
             if last_smallunit_float!=None:
-                print('last_smallunit_float:%s'%(last_smallunit_float))
+                # print('last_smallunit_float:%s'%(last_smallunit_float))
                 self.last_smallunit_float=last_smallunit_float
 
             time.sleep(30)

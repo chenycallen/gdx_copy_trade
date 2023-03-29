@@ -37,13 +37,15 @@ from selenium.webdriver.support import expected_conditions as EC
 import GdxExecutor as d5execu
 import ty2 as ty
 import near_middle as dpm
+import justAutoSwapGdx as jasg
+
 
 
 SettleMakerOrders = '0x8Eb76679F7eD2a2Ec0145A87fE35d67ff6e19aa6'
 token0 = '0x2F27118E3D2332aFb7d165140Cf1bB127eA6975d'
 arbscanAip = 'UH5MFQGNHT1NP9V8SF32HS9S3YS5QEAXKX'
 
-myAddress = '0x03d4058Fb4a3bF45b6fD9360363850b2b2c870FD'
+myAddress = '0x0A71469304e4a310B268230B8eC29Cf66436B139'
 
 
 # 設定黨讀取
@@ -55,36 +57,48 @@ with open('setting.ini', 'r', encoding='utf-8') as f:
 
 path = config.get('setting', 'path')
 password = config.get('setting', 'password')
-address = config.get('setting', 'address')
-followaddress = config.get('setting', 'followaddress')
-cd = config.get('setting', 'cd')
+private_key = config.get('setting', 'private_key')
+http_endpoint = config.get('setting', 'http_endpoint')
 
-path = config.get('sing', 'autoClaim')
-
+g = d5execu.GDXExecutor(private_key,http_endpoint)
+public_key = g.public_key
 
 global ethUsdPrice
 global gdxUsdPrice
 
-private_key = 'e6da14abb734a8e24681534fd1c2b50a1bc58fb6b1285beb0174f023bcb9dc0a'
-http_endpoint = 'https://arb-mainnet.g.alchemy.com/v2/YAqC34Nx1yEoTG_6GaWjwkwKPsvLVZTy'
-
-
 def bel():
 	g = d5execu.GDXExecutor(private_key,http_endpoint)
 	wethBalance = g.WETH_balance()
-
-
 	o = ty.T2MakeOTHER(wethBalance,private_key,http_endpoint)
+	j = jasg.autoSwapGdx(private_key,http_endpoint)
 	# a = dpm.DingPkMake(private_key,http_endpoint)
-	
 	o.run()
 	return
 
 
-bel()
-# bel()
+def myInviteAddress(addr):
+	invitation_relations = f'https://api-arbitrum.d5.xyz/v1/farm/farmers/0xB2c0EDAb5D07536ca0D884Ef64D5C51451B83b85/invitation_relations'
+	invitation_relations = requests.get(invitation_relations).json()['data']['relations']
+	
+	for i in invitation_relations:
+		myInvitaddr = i['invitee']
+		print(myInvitaddr)
+		if myInvitaddr == addr:
+			return True 
+	return False
 
+# myInviteAddress('0xf3932824fe5006ef31e56F365128c074A19a69Ec')
 
+def update_balance():
+
+    wethBalance = g.WETH_balance()
+    ethBalance = g.ETH_balance()
+    gdxBalance = g.GDX_balance()
+    print(  f'[錢包狀態]\n'
+            f'WETH:{wethBalance/10**18}\n'
+            f'ETH:{ethBalance/10**18}\n'
+            f'GDX:{gdxBalance/10**18}\n')
+ 
 
 
 def aDay(timestamp): #如果是今天就回傳TRUE
@@ -101,6 +115,7 @@ def aDay(timestamp): #如果是今天就回傳TRUE
 		return False
 
 def getAddressCloseOrders(addr, aday=True):
+	getPrice()
 	orders = f'https://api-arbitrum.d5.xyz/v1/orders/close/by_owner?owner={addr}&order_type=close&address=&from=&limit=&direction=next'
 	orders = requests.get(orders).json()
 	orders = orders['data']['orders']
@@ -134,6 +149,7 @@ def getAddressCloseOrders(addr, aday=True):
 			f'總成交價值：{round((ethUsdPrice*buyOrderAmount)+(gdxUsdPrice*sellOrderAmount),2)}U\n'
 			f'總成交訂單: {total_oreders}\n'
 		)
+	print(info)
 	return info , totalValue		
 		
 def convertBoundaryPrice(boundary):
@@ -178,6 +194,7 @@ def getAddressOrder(addr):
 	sellOrders = 0
 	buyOrderAmount = 0
 	sellOrderAmount = 0
+	isGridOrder = 0
 
 	allTxhash = []
 	gridTxhash = []
@@ -203,29 +220,25 @@ def getAddressOrder(addr):
 		# print(lower,upper)
 
 	for item in allTxhash: #判斷哪些是網格
-	    if item in gridTxhash:
-	        continue
-	    print("Processing item:", item, allTxhash.count(item))
-	    gridTxhash.append(item)
+		if item in gridTxhash:
+			continue
+		gridTxhash.append(item)
 
+		if allTxhash.count(item) > 1:
+			isGridOrder += 1
 
-
-
-	# print(gridTxhash)
-	
 
 
 	totalValue = round((ethUsdPrice*buyOrderAmount)+(gdxUsdPrice*sellOrderAmount),2)
-	# print(f'網格數量:{len(tx_hash)}')
+
 	info = (	
 			f'[即時訂單]\n'
-			f'訂單Claim: {needClaim} ({round(maker_amount_swapped, 2)} GDX) \n'
-			# f'Taker金額: {round(taker_amount_out, 2)} GDX\n'
-			# f'Taker手續費: {round(taker_fee_amount_out, 2)} GDX\n'
+			f'訂單Claim：{needClaim} ({round(maker_amount_swapped, 2)} GDX) \n'
+			f'網格單：{isGridOrder}\n'
 			f'買：{buyOrders} ({round(buyOrderAmount, 4)} E) {round(ethUsdPrice*buyOrderAmount, 2)}U\n'
 			f'賣：{sellOrders} ({round(sellOrderAmount, 2)} GDX) {round(gdxUsdPrice*sellOrderAmount, 2)}U\n'
 			f'總價值：{round((ethUsdPrice*buyOrderAmount)+(gdxUsdPrice*sellOrderAmount),2)}U\n'
-			f'總訂單: {total_oreders}\n'
+			f'總訂單：{total_oreders}\n'
 		)
 
 	print(info)
@@ -291,5 +304,15 @@ def getLeaderboard(): #取得排行榜
 
 # getLeaderboard()
 
-# getRank('0x6151ce5aE494292c221938c4647755EaB6b81b34')
 # print(getEthPrice())
+
+
+
+bel()
+
+while True:
+	getAddressCloseOrders(public_key)
+	getAddressOrder(public_key)
+	update_balance()
+	time.sleep(10)
+	pass
